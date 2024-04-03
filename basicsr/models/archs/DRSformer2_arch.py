@@ -385,7 +385,7 @@ class Upsample(nn.Module):
     def forward(self, x):
         return self.body(x)
 
-class DRSformer(nn.Module):
+class DRSformer2(nn.Module):
     def __init__(self,
                  inp_channels=3,
                  out_channels=3,
@@ -397,7 +397,7 @@ class DRSformer(nn.Module):
                  LayerNorm_type='WithBias'  ## Other option 'BiasFree'
                  ):
 
-        super(DRSformer, self).__init__()
+        super(DRSformer2, self).__init__()
 
         self.patch_embed = OverlapPatchEmbed(inp_channels, dim)
 

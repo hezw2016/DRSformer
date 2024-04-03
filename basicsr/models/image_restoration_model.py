@@ -214,11 +214,13 @@ class ImageCleanModel(BaseModel):
                            save_img, rgb2bgr, use_image):
         dataset_name = dataloader.dataset.opt['name']
         with_metrics = self.opt['val'].get('metrics') is not None
+        
         if with_metrics:
             self.metric_results = {
                 metric: 0
                 for metric in self.opt['val']['metrics'].keys()
             }
+            self._initialize_best_metric_results(dataset_name)
         # pbar = tqdm(total=len(dataloader), unit='image')
 
         window_size = self.opt['val'].get('window_size', 0)
@@ -291,6 +293,8 @@ class ImageCleanModel(BaseModel):
             for metric in self.metric_results.keys():
                 self.metric_results[metric] /= cnt
                 current_metric = self.metric_results[metric]
+                # update the best metric result ZW copy from basicsr
+                self._update_best_metric_result(dataset_name, metric, self.metric_results[metric], current_iter)
 
             self._log_validation_metric_values(current_iter, dataset_name,
                                                tb_logger)
@@ -302,6 +306,11 @@ class ImageCleanModel(BaseModel):
         log_str = f'Validation {dataset_name},\t'
         for metric, value in self.metric_results.items():
             log_str += f'\t # {metric}: {value:.4f}'
+            if hasattr(self, 'best_metric_results'):
+                log_str += (f'\tBest: {self.best_metric_results[dataset_name][metric]["val"]:.4f} @ '
+                            f'{self.best_metric_results[dataset_name][metric]["iter"]} iter')
+            log_str += '\n'
+
         logger = get_root_logger()
         logger.info(log_str)
         if tb_logger:

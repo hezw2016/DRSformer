@@ -1,5 +1,5 @@
 # general settings
-name: Deraining_DRSformer
+name: Deraindrop_DRSformer2_p256_d16
 model_type: ImageCleanModel
 scale: 1
 num_gpu: 1
@@ -10,8 +10,8 @@ datasets:
   train:
     name: TrainSet
     type: Dataset_PairedImage
-    dataroot_gt: ./Datasets/train/Rain200H/target
-    dataroot_lq: ./Datasets/train/Rain200H/input
+    dataroot_gt: ./Datasets/train/Raindrop/target
+    dataroot_lq: ./Datasets/train/Raindrop/input
     geometric_augs: true
 
     filename_tmpl: '{}'
@@ -26,28 +26,28 @@ datasets:
     ### ------- Training on single fixed-patch size 128x128---------
     mini_batch_sizes: [4]   
     iters: [300000]
-    gt_size: 128   
-    gt_sizes: [128]
+    gt_size: 256
+    gt_sizes: [256]
     ### ------------------------------------------------------------
 
     dataset_enlarge_ratio: 1
     prefetch_mode: ~
 
   val:
-    name: ValSet
+    name: test-a
     type: Dataset_PairedImage
-    dataroot_gt: ./Datasets/test/Rain200H/target
-    dataroot_lq: ./Datasets/test/Rain200H/input
+    dataroot_gt: ./Datasets/test/Raindrop/test-a/target
+    dataroot_lq: ./Datasets/test/Raindrop/test-a/input
     io_backend:
       type: disk
 
 # network structures
 network_g:
-  type: DRSformer
+  type: DRSformer2
   inp_channels: 3
   out_channels: 3
-  dim: 48
-  num_blocks: [4,6,6,8]
+  dim: 16
+  num_blocks: [2,4,4,8] # original: 4 6 6 8
   heads: [1,2,4,8]
   ffn_expansion_factor: 2.66
   bias: False
@@ -70,13 +70,13 @@ train:
   # 2nd cycle: cosine annealing (3e-4 to 1e-6) for 208k iters.
   scheduler:
     type: CosineAnnealingRestartCyclicLR
-    periods: [92000, 208000]       
+    periods: [100000, 200000]       
     restart_weights: [1,1]
     eta_mins: [0.0003,0.000001]   
   
   mixing_augs:
     mixup: false
-    mixup_beta: 1.2
+    mixup_beta: 1.2  ### ???
     use_identity: true
 
   optim_g:
@@ -105,6 +105,12 @@ val:
       type: calculate_psnr
       crop_border: 0
       test_y_channel: true
+      better: higher
+    ssim:
+      type: calculate_ssim
+      crop_border: 0
+      test_y_channel: true
+      better: higher
 
 # logging settings
 logger:
@@ -119,4 +125,3 @@ logger:
 dist_params:
   backend: nccl
   port: 29500
-

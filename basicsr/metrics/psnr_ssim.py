@@ -10,7 +10,7 @@ def calculate_psnr(img1,
                    img2,
                    crop_border,
                    input_order='HWC',
-                   test_y_channel=False):
+                   test_y_channel=False, **kwargs):
     """Calculate PSNR (Peak Signal-to-Noise Ratio).
 
     Ref: https://en.wikipedia.org/wiki/Peak_signal-to-noise_ratio
@@ -226,7 +226,7 @@ def calculate_ssim(img1,
                    img2,
                    crop_border,
                    input_order='HWC',
-                   test_y_channel=False):
+                   test_y_channel=False, **kwargs):
     """Calculate SSIM (structural similarity).
 
     Ref:
