@@ -4,3 +4,10 @@ Datasets/*
 experiments/*
 Datasets.zip
 .eggs/*
+basicsr/__pycache__/*
+basicsr/data/__pycache__/*
+basicsr/metrics/__pycache__/*
+basicsr/models/__pycache__/*
+basicsr/models/archs/__pycache__/*
+basicsr/models/losses/__pycache__/*
+basicsr/utils/__pycache__/*
