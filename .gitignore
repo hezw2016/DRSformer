@@ -11,3 +11,4 @@ basicsr/models/__pycache__/*
 basicsr/models/archs/__pycache__/*
 basicsr/models/losses/__pycache__/*
 basicsr/utils/__pycache__/*
+basicsr/version.py
