@@ -1,5 +1,5 @@
 # general settings
-name: 002_LOLv2-syn_LLIM_DRSformer2_p256d16_b2448
+name: 002_LOLv2-syn_LLIE_DRSformer2_p256d16_b2448
 model_type: ImageCleanModel
 scale: 1
 num_gpu: 1
