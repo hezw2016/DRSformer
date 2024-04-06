@@ -3,6 +3,8 @@ basicsr.egg-info/*
 Datasets/*
 experiments/*
 Datasets.zip
+LOLv1.zip
+LOLv2.zip
 .eggs/*
 basicsr/__pycache__/*
 basicsr/data/__pycache__/*
@@ -12,3 +14,4 @@ basicsr/models/archs/__pycache__/*
 basicsr/models/losses/__pycache__/*
 basicsr/utils/__pycache__/*
 basicsr/version.py
+run.sh

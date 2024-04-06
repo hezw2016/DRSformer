@@ -176,7 +176,7 @@ class BaseModel():
             net_cls_str = (f'{net.__class__.__name__} - '
                            f'{net.module.__class__.__name__}')
         else:
-            net_cls_str = f'{net.__class__.__name__}'
+            net_cls_str = f'{net.__class__.__name__}'  
 
         net = self.get_bare_model(net)
         net_str = str(net)
@@ -184,7 +184,8 @@ class BaseModel():
 
         logger.info(
             f'Network: {net_cls_str}, with parameters: {net_params:,d}')
-        logger.info(net_str)
+        # uncomment to print the details of arch
+        # logger.info(net_str)
 
     def _set_lr(self, lr_groups_l):
         """Set learning rate for warmup.

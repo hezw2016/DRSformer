@@ -2,4 +2,4 @@
 
 # python setup.py develop --no_cuda_ext
 
-python basicsr/train.py -opt ./Options/Deraindrop.yml
+python basicsr/train.py -opt ./Options/LLIM.yml

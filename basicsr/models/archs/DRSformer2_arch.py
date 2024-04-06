@@ -421,7 +421,7 @@ class DRSformer2(nn.Module):
                              bias=bias, LayerNorm_type=LayerNorm_type) for i in range(num_blocks[3])])
 
         self.up4_3 = Upsample(int(dim * 2 ** 3))  ## From Level 4 to Level 3
-        self.reduce_chan_level3 = nn.Conv2d(int(dim * 2 ** 3), int(dim * 2 ** 2), kernel_size=1, bias=bias)
+        self.reduce_chan_level3 = nn.Conv2d(int(dim * 2 ** 3), int(dim * 2 ** 2), kernel_size=1, bias=bias) # dim x 8 -> dim x 4
         self.decoder_level3 = nn.Sequential(*[
             TransformerBlock(dim=int(dim * 2 ** 2), num_heads=heads[2], ffn_expansion_factor=ffn_expansion_factor,
                              bias=bias, LayerNorm_type=LayerNorm_type) for i in range(num_blocks[2])])
@@ -455,7 +455,7 @@ class DRSformer2(nn.Module):
         latent = self.latent(inp_enc_level4)
 
         inp_dec_level3 = self.up4_3(latent)
-        inp_dec_level3 = torch.cat([inp_dec_level3, out_enc_level3], 1)
+        inp_dec_level3 = torch.cat([inp_dec_level3, out_enc_level3], dim=1)
         inp_dec_level3 = self.reduce_chan_level3(inp_dec_level3)
         out_dec_level3 = self.decoder_level3(inp_dec_level3)
 
@@ -474,10 +474,13 @@ class DRSformer2(nn.Module):
 
 if __name__ == '__main__':
     input = torch.rand(1, 3, 256, 256)
-    model = DRSformer()
+    model = DRSformer2()
    # output = model(input)
 
     from fvcore.nn import FlopCountAnalysis, parameter_count_table
 
     flops = FlopCountAnalysis(model, input)
+    param = parameter_count_table(model)
+
     print("FLOPs: ", flops.total())
+    print("Param: ", param)

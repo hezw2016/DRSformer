@@ -75,7 +75,7 @@ class ImageCleanModel(BaseModel):
         if self.is_train:
             self.init_training_settings()
 
-    def init_training_settings(self):
+    def init_training_settings(self): # loss function is defined here
         self.net_g.train()
         train_opt = self.opt['train']
 
@@ -100,9 +100,9 @@ class ImageCleanModel(BaseModel):
             self.net_g_ema.eval()
 
         # define losses
-        if train_opt.get('pixel_opt'):
+        if train_opt.get('pixel_opt'): # what's the difference between .get and []
             pixel_type = train_opt['pixel_opt'].pop('type')
-            cri_pix_cls = getattr(loss_module, pixel_type)
+            cri_pix_cls = getattr(loss_module, pixel_type) # check the top
             self.cri_pix = cri_pix_cls(**train_opt['pixel_opt']).to(
                 self.device)
         else:
@@ -152,7 +152,7 @@ class ImageCleanModel(BaseModel):
         if not isinstance(preds, list):
             preds = [preds]
 
-        self.output = preds[-1]
+        self.output = preds[-1] # choose the final output ....
 
         loss_dict = OrderedDict()
         # pixel loss
