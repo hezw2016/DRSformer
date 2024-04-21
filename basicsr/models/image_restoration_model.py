@@ -174,9 +174,15 @@ class ImageCleanModel(BaseModel):
 
         for pred in preds:
             l_pix += self.cri_pix(pred, self.gt)
+        
+        # try to calculate the gt_mask
+        diff = self.gt - self.lq # B 3 H W
+        gray = 0.2989 * diff[:,0,:,:] + 0.5870 * diff[:,1,:,:] + 0.1140 * diff[:,2,:,:]
+        # gray.unsqueeze(1)
+        gt_mask = (torch.abs(gray.unsqueeze(1)) > (30/255)).type(torch.float32)
 
         for mask in masks:
-            l_seg += self.cri_seg(torch.sigmoid(mask), (torch.mean(torch.abs(self.gt-self.lq), dim=1, keepdim=True) > 0.1176).type(torch.float32))
+            l_seg += self.cri_seg(torch.sigmoid(mask), gt_mask)
 
         loss_dict['l_pix'] = l_pix
         loss_dict['l_seg'] = l_seg
