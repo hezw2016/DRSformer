@@ -271,7 +271,7 @@ def main():
 
             
             model.feed_train_data({'lq': lq, 'gt':gt})
-            model.optimize_parameters(current_iter)
+            model.optimize_parameters(current_iter)  # 训练的过程，主要在这里，包括输出，loss和log等等
 
             iter_time = time.time() - iter_time
             # log

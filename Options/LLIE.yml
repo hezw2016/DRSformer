@@ -1,5 +1,5 @@
 # general settings
-name: 002_LOLv2-syn_LLIE_DRSformer2_p256d16_b2448
+name: 004_LLIE_LOLv2-syn_DRSformer2_p128d16_b2448
 model_type: ImageCleanModel
 scale: 1
 num_gpu: 1
@@ -8,7 +8,7 @@ manual_seed: 666
 # dataset and data loader settings
 datasets:
   train:
-    name: TrainSet
+    name: TrainSet-LOLv2-syn
     type: Dataset_PairedImage
     dataroot_gt: ./Datasets/train/LOLv2-syn/target
     dataroot_lq: ./Datasets/train/LOLv2-syn/input
@@ -26,15 +26,15 @@ datasets:
     ### ------- Training on single fixed-patch size 128x128---------
     mini_batch_sizes: [4]   
     iters: [300000]
-    gt_size: 256   
-    gt_sizes: [256]
+    gt_size: 128   
+    gt_sizes: [128]
     ### ------------------------------------------------------------
 
     dataset_enlarge_ratio: 1
     prefetch_mode: ~
 
   val:
-    name: LOLv1
+    name: LOLv2-syn
     type: Dataset_PairedImage
     dataroot_gt: ./Datasets/test/LOLv2-syn/target
     dataroot_lq: ./Datasets/test/LOLv2-syn/input

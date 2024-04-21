@@ -1,3 +1,11 @@
+.eggs
+__pycache__
+Datasets
+experiments
+tb_logger
+basicsr.egg-info
+*.zip
+*.pth
 tb_logger/*
 basicsr.egg-info/*
 Datasets/*

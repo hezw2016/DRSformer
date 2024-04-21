@@ -17,6 +17,20 @@ def l1_loss(pred, target):
 def mse_loss(pred, target):
     return F.mse_loss(pred, target, reduction='none')
 
+@weighted_loss
+def bce_loss(pred, target):
+    return F.binary_cross_entropy(pred, target)
+
+
+class BCELoss(nn.Module):
+    def __init__(self, loss_weight=1.0):
+        super(BCELoss, self).__init__()
+    
+        self.loss_weight = loss_weight
+
+    def forward(self, pred, target, **kwargs):
+        return self.loss_weight * bce_loss(pred, target)
+
 
 # @weighted_loss
 # def charbonnier_loss(pred, target, eps=1e-12):

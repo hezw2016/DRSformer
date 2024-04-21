@@ -107,6 +107,15 @@ class ImageCleanModel(BaseModel):
                 self.device)
         else:
             raise ValueError('pixel loss are None.')
+        
+        # add seg losses
+        if train_opt.get('seg_opt'):
+            seg_type = train_opt['seg_opt'].pop('type')
+            cri_seg_cls = getattr(loss_module, seg_type)
+            self.cri_seg = cri_seg_cls(**train_opt['seg_opt']).to(self.device)
+            # self.cri_seg = torch.nn.BCELoss()
+        else:
+            raise ValueError('seg loss are None.')
 
         # set up optimizers and schedulers
         self.setup_optimizers()
@@ -148,21 +157,36 @@ class ImageCleanModel(BaseModel):
 
     def optimize_parameters(self, current_iter):
         self.optimizer_g.zero_grad()
-        preds = self.net_g(self.lq)
+        preds, masks = self.net_g(self.lq)
         if not isinstance(preds, list):
             preds = [preds]
 
+        if not isinstance(masks, list):
+            masks = [masks]
+
         self.output = preds[-1] # choose the final output ....
+        self.mask = masks[-1]
 
         loss_dict = OrderedDict()
         # pixel loss
         l_pix = 0.
+        l_seg = 0.
+
         for pred in preds:
             l_pix += self.cri_pix(pred, self.gt)
 
-        loss_dict['l_pix'] = l_pix
+        for mask in masks:
+            l_seg += self.cri_seg(torch.sigmoid(mask), (torch.mean(torch.abs(self.gt-self.lq), dim=1, keepdim=True) > 0.1176).type(torch.float32))
 
-        l_pix.backward()
+        loss_dict['l_pix'] = l_pix
+        loss_dict['l_seg'] = l_seg
+
+        l_total = l_pix + l_seg
+        l_total.backward()
+
+        # l_pix.backward()
+        # l_seg.backward()
+
         if self.opt['train']['use_grad_clip']:
             torch.nn.utils.clip_grad_norm_(self.net_g.parameters(), 0.01)
         self.optimizer_g.step()
@@ -191,14 +215,14 @@ class ImageCleanModel(BaseModel):
         if hasattr(self, 'net_g_ema'):
             self.net_g_ema.eval()
             with torch.no_grad():
-                pred = self.net_g_ema(img)
+                pred, _ = self.net_g_ema(img)
             if isinstance(pred, list):
                 pred = pred[-1]
             self.output = pred
         else:
             self.net_g.eval()
             with torch.no_grad():
-                pred = self.net_g(img)
+                pred, _ = self.net_g(img)
             if isinstance(pred, list):
                 pred = pred[-1]
             self.output = pred
