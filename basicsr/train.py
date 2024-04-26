@@ -165,7 +165,7 @@ def main():
             mkdir_and_rename(osp.join('tb_logger', opt['name']))
 
     # initialize loggers
-    logger, tb_logger = init_loggers(opt)
+    logger, tb_logger = init_loggers(opt) # tb_logger is SummaryWriter
 
     # create train and validation dataloaders
     result = create_train_val_dataloader(opt, logger)
@@ -186,7 +186,7 @@ def main():
         current_iter = 0
 
     # create message logger (formatted outputs)
-    msg_logger = MessageLogger(opt, current_iter, tb_logger)
+    msg_logger = MessageLogger(opt, current_iter, tb_logger) # formatted
 
     # dataloader prefetcher
     prefetch_mode = opt['datasets']['train'].get('prefetch_mode')
@@ -294,7 +294,7 @@ def main():
                 # wheather use uint8 image to compute metrics
                 use_image = opt['val'].get('use_image', True)
                 model.validation(val_loader, current_iter, tb_logger,
-                                 opt['val']['save_img'], rgb2bgr, use_image )
+                                 opt['val']['save_img'], rgb2bgr, use_image)
 
             data_time = time.time()
             iter_time = time.time()

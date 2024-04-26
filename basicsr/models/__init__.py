@@ -35,7 +35,7 @@ def create_model(opt):
     if model_cls is None:
         raise ValueError(f'Model {model_type} is not found.')
 
-    model = model_cls(opt)
+    model = model_cls(opt)  # create a model object
 
     logger = get_root_logger()
     logger.info(f'Model [{model.__class__.__name__}] is created.')

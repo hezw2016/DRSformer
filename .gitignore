@@ -23,3 +23,5 @@ basicsr/models/losses/__pycache__/*
 basicsr/utils/__pycache__/*
 basicsr/version.py
 localrun.sh
+old_exp
+old_tb_logger

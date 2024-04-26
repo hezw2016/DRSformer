@@ -1,5 +1,6 @@
 # general settings
-name: Deraindrop_DRSformer2_SEG_p256_d16
+# name: Deraindrop_SEGinlevel1tail_MSE_p256_d16
+name: Deraindrop_baseline_p256_d16_b2448
 model_type: ImageCleanModel
 scale: 1
 num_gpu: 1
@@ -75,7 +76,7 @@ train:
     eta_mins: [0.0003,0.000001]   
   
   mixing_augs:
-    mixup: false
+    mixup: false ############
     mixup_beta: 1.2  ### ???
     use_identity: true
 
@@ -91,9 +92,9 @@ train:
     loss_weight: 1
     reduction: mean
   
-  seg_opt:
-    type: BCELoss
-    loss_weight: 1
+  # seg_opt:
+  #   type: MSELoss
+  #   loss_weight: 1
 
 # validation settings
 val:

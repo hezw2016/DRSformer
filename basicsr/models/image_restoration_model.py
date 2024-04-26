@@ -103,19 +103,18 @@ class ImageCleanModel(BaseModel):
         if train_opt.get('pixel_opt'): # what's the difference between .get and []
             pixel_type = train_opt['pixel_opt'].pop('type')
             cri_pix_cls = getattr(loss_module, pixel_type) # check the top
-            self.cri_pix = cri_pix_cls(**train_opt['pixel_opt']).to(
-                self.device)
+            self.cri_pix = cri_pix_cls(**train_opt['pixel_opt']).to(self.device)
         else:
             raise ValueError('pixel loss are None.')
         
         # add seg losses
-        if train_opt.get('seg_opt'):
-            seg_type = train_opt['seg_opt'].pop('type')
-            cri_seg_cls = getattr(loss_module, seg_type)
-            self.cri_seg = cri_seg_cls(**train_opt['seg_opt']).to(self.device)
-            # self.cri_seg = torch.nn.BCELoss()
-        else:
-            raise ValueError('seg loss are None.')
+        # if train_opt.get('seg_opt'):
+        #     seg_type = train_opt['seg_opt'].pop('type')
+        #     cri_seg_cls = getattr(loss_module, seg_type)
+        #     self.cri_seg = cri_seg_cls(**train_opt['seg_opt']).to(self.device)
+        #     # self.cri_seg = torch.nn.BCELoss()
+        # else:
+        #     raise ValueError('seg loss are None.')
 
         # set up optimizers and schedulers
         self.setup_optimizers()
@@ -157,7 +156,7 @@ class ImageCleanModel(BaseModel):
 
     def optimize_parameters(self, current_iter):
         self.optimizer_g.zero_grad()
-        preds, masks = self.net_g(self.lq)
+        preds, masks = self.net_g(self.lq) # forward inference
         if not isinstance(preds, list):
             preds = [preds]
 
@@ -176,18 +175,18 @@ class ImageCleanModel(BaseModel):
             l_pix += self.cri_pix(pred, self.gt)
         
         # try to calculate the gt_mask
-        diff = self.gt - self.lq # B 3 H W
-        gray = 0.2989 * diff[:,0,:,:] + 0.5870 * diff[:,1,:,:] + 0.1140 * diff[:,2,:,:]
-        # gray.unsqueeze(1)
-        gt_mask = (torch.abs(gray.unsqueeze(1)) > (30/255)).type(torch.float32)
+        # diff = self.gt - self.lq # B 3 H W
+        # gray = 0.2989 * diff[:,0,:,:] + 0.5870 * diff[:,1,:,:] + 0.1140 * diff[:,2,:,:]
+        # gt_mask = (torch.abs(gray.unsqueeze(1)) > (30/255)).type(torch.float32)
 
-        for mask in masks:
-            l_seg += self.cri_seg(torch.sigmoid(mask), gt_mask)
+        # for mask in masks:
+        #     # l_seg += self.cri_seg(torch.sigmoid(mask), gt_mask)
+        #     l_seg += self.cri_seg(mask, gt_mask)
 
         loss_dict['l_pix'] = l_pix
-        loss_dict['l_seg'] = l_seg
+        # loss_dict['l_seg'] = l_seg
 
-        l_total = l_pix + l_seg
+        l_total = l_pix
         l_total.backward()
 
         # l_pix.backward()
@@ -214,6 +213,7 @@ class ImageCleanModel(BaseModel):
         self.nonpad_test(img)
         _, _, h, w = self.output.size()
         self.output = self.output[:, :, 0:h - mod_pad_h * scale, 0:w - mod_pad_w * scale]
+        self.mask = self.mask[:, :, 0:h - mod_pad_h * scale, 0:w - mod_pad_w * scale]
 
     def nonpad_test(self, img=None):
         if img is None:
@@ -221,17 +221,23 @@ class ImageCleanModel(BaseModel):
         if hasattr(self, 'net_g_ema'):
             self.net_g_ema.eval()
             with torch.no_grad():
-                pred, _ = self.net_g_ema(img)
+                pred, mask = self.net_g_ema(img)
             if isinstance(pred, list):
                 pred = pred[-1]
+            if isinstance(mask, list):
+                mask = mask[-1]
             self.output = pred
+            self.mask = mask
         else:
             self.net_g.eval()
             with torch.no_grad():
-                pred, _ = self.net_g(img)
+                pred, mask = self.net_g(img)
             if isinstance(pred, list):
                 pred = pred[-1]
+            if isinstance(mask, list):
+                mask = mask[-1]
             self.output = pred
+            self.mask = mask # access the self.pred and mask in the inference phase
             self.net_g.train()
 
     def dist_validation(self, dataloader, current_iter, tb_logger, save_img, rgb2bgr, use_image):
@@ -268,6 +274,10 @@ class ImageCleanModel(BaseModel):
             self.feed_data(val_data)
             test()
 
+            tb_logger.add_images('inference/lq', self.lq, current_iter)
+            tb_logger.add_images('inference/mask_pred', self.mask, current_iter)
+            tb_logger.add_images('inference/output', self.output, current_iter)
+
             visuals = self.get_current_visuals()
             sr_img = tensor2img([visuals['result']], rgb2bgr=rgb2bgr)
             if 'gt' in visuals:
@@ -277,6 +287,7 @@ class ImageCleanModel(BaseModel):
             # tentative for out of GPU memory
             del self.lq
             del self.output
+            del self.mask
             torch.cuda.empty_cache()
 
             if save_img:
@@ -328,6 +339,7 @@ class ImageCleanModel(BaseModel):
 
             self._log_validation_metric_values(current_iter, dataset_name,
                                                tb_logger)
+            # tb_logger.add_images('inference/mask_pred', self.mask, current_iter)
         return current_metric
 
 
@@ -351,6 +363,7 @@ class ImageCleanModel(BaseModel):
         out_dict = OrderedDict()
         out_dict['lq'] = self.lq.detach().cpu()
         out_dict['result'] = self.output.detach().cpu()
+        out_dict['mask'] = self.mask.detach().cpu()
         if hasattr(self, 'gt'):
             out_dict['gt'] = self.gt.detach().cpu()
         return out_dict
