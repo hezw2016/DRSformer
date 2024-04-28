@@ -325,32 +325,32 @@ class SepConv(nn.Module):
         return self.op(x)
 
 ## Mixture of Experts Feature Compensator (MEFC)
-class subnet(nn.Module):
-    def __init__(self, dim, layer_num=1, steps=4):
-        super(subnet,self).__init__()
+# class subnet(nn.Module):
+#     def __init__(self, dim, layer_num=1, steps=4):
+#         super(subnet,self).__init__()
 
-        self._C = dim
-        self.num_ops = len(Operations)
-        self._layer_num = layer_num
-        self._steps = steps
+#         self._C = dim
+#         self.num_ops = len(Operations)
+#         self._layer_num = layer_num
+#         self._steps = steps
 
-        self.layers = nn.ModuleList()
-        for _ in range(self._layer_num):
-            attention = OALayer(self._C, self._steps, self.num_ops)
-            self.layers += [attention]
-            layer = GroupOLs(steps, self._C)
-            self.layers += [layer]
+#         self.layers = nn.ModuleList()
+#         for _ in range(self._layer_num):
+#             attention = OALayer(self._C, self._steps, self.num_ops)
+#             self.layers += [attention]
+#             layer = GroupOLs(steps, self._C)
+#             self.layers += [layer]
 
-    def forward(self, x):
+#     def forward(self, x):
     
-        for _, layer in enumerate(self.layers):
-            if isinstance(layer, OALayer):
-                weights = layer(x)
-                weights = F.softmax(weights, dim=-1)
-            else:
-                x = layer(x, weights)
+#         for _, layer in enumerate(self.layers):
+#             if isinstance(layer, OALayer):
+#                 weights = layer(x)
+#                 weights = F.softmax(weights, dim=-1)
+#             else:
+#                 x = layer(x, weights)
 
-        return x
+#         return x
 
 ## Overlapped image patch embedding with 3x3 Conv
 class OverlapPatchEmbed(nn.Module):
@@ -389,8 +389,8 @@ class DRSformer2_SEG(nn.Module):
     def __init__(self,
                  inp_channels=3,
                  out_channels=3,
-                 dim=48,
-                 num_blocks=[4, 6, 6, 8],
+                 dim=16,
+                 num_blocks=[2, 4, 4, 8],
                  heads=[1, 2, 4, 8],
                  ffn_expansion_factor=2.66,
                  bias=False,
@@ -473,8 +473,9 @@ class DRSformer2_SEG(nn.Module):
 
         inp_enc_level1 = self.patch_embed(inp_img)
         out_enc_level1 = self.encoder_level1(inp_enc_level1)  
-        # seg_mask1 = self.seg_out1(out_enc_level1)
-        seg_mask1 = inp_img[:,0,:,:].unsqueeze(1)
+        seg_mask1 = self.seg_out1(out_enc_level1)
+
+        # seg_mask1 = inp_img[:,0,:,:].unsqueeze(1)
 
         inp_enc_level2 = self.down1_2(out_enc_level1)
         out_enc_level2 = self.encoder_level2(inp_enc_level2)
@@ -516,7 +517,7 @@ class DRSformer2_SEG(nn.Module):
 
         out_dec_level1 = self.output(out_dec_level1) + inp_img
 
-        return out_dec_level1, seg_mask1
+        return out_dec_level1, [seg_mask1]
 
 if __name__ == '__main__':
     input = torch.rand(1, 3, 256, 256)
