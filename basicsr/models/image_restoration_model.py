@@ -108,13 +108,13 @@ class ImageCleanModel(BaseModel):
             raise ValueError('pixel loss are None.')
         
         # add seg losses
-        # if train_opt.get('seg_opt'):
-        #     seg_type = train_opt['seg_opt'].pop('type')
-        #     cri_seg_cls = getattr(loss_module, seg_type)
-        #     self.cri_seg = cri_seg_cls(**train_opt['seg_opt']).to(self.device)
-        #     # self.cri_seg = torch.nn.BCELoss()
-        # else:
-        #     raise ValueError('seg loss are None.')
+        if train_opt.get('seg_opt'):
+            seg_type = train_opt['seg_opt'].pop('type')
+            cri_seg_cls = getattr(loss_module, seg_type)
+            self.cri_seg = cri_seg_cls(**train_opt['seg_opt']).to(self.device)
+            # self.cri_seg = torch.nn.BCELoss()
+        else:
+            raise ValueError('seg loss are None.')
 
         # set up optimizers and schedulers
         self.setup_optimizers()
@@ -175,22 +175,21 @@ class ImageCleanModel(BaseModel):
             l_pix += self.cri_pix(pred, self.gt)
         
         # try to calculate the gt_mask
-        # diff = self.gt - self.lq # B 3 H W
-        # gray = 0.2989 * diff[:,0,:,:] + 0.5870 * diff[:,1,:,:] + 0.1140 * diff[:,2,:,:]
+        diff = self.gt - self.lq # B 3 H W
+        gray = 0.2989 * diff[:,0,:,:] + 0.5870 * diff[:,1,:,:] + 0.1140 * diff[:,2,:,:]
         # gt_mask = (torch.abs(gray.unsqueeze(1)) > (30/255)).type(torch.float32)
+        gt_mask = torch.abs(gray.unsqueeze(1))
 
-        # for mask in masks:
-        #     # l_seg += self.cri_seg(torch.sigmoid(mask), gt_mask)
-        #     l_seg += self.cri_seg(mask, gt_mask)
+        for mask in masks:
+            # l_seg += self.cri_seg(torch.sigmoid(mask), gt_mask)
+            l_seg += self.cri_seg(mask, gt_mask)
 
         loss_dict['l_pix'] = l_pix
-        # loss_dict['l_seg'] = l_seg
+        loss_dict['l_seg'] = l_seg
 
-        l_total = l_pix
+        l_total = l_pix + l_seg
         l_total.backward()
 
-        # l_pix.backward()
-        # l_seg.backward()
 
         if self.opt['train']['use_grad_clip']:
             torch.nn.utils.clip_grad_norm_(self.net_g.parameters(), 0.01)
