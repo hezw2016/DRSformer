@@ -15,7 +15,7 @@ import numpy as np
 parser = argparse.ArgumentParser(description='Test on your own images')
 parser.add_argument('--input_dir', default='./test/input/', type=str, help='Directory of input images or path of single image')
 parser.add_argument('--result_dir', default='./test/output/', type=str, help='Directory for restored results')
-parser.add_argument('--task', required=True, type=str, help='Task to run', choices=['Deraining'])
+parser.add_argument('--task', required=True, default='Deraindrop', type=str, help='Task to run', choices=['Deraining', 'Deraindrop'])
 parser.add_argument('--tile', type=int, default=None, help='Tile size (e.g 720). None means testing on the original resolution image')
 parser.add_argument('--tile_overlap', type=int, default=32, help='Overlapping of different tiles')
 
@@ -34,8 +34,8 @@ def save_gray_img(filepath, img):
     cv2.imwrite(filepath, img)
 
 def get_weights_and_parameters(task, parameters):
-    if task == 'Deraining':
-        weights = os.path.join('pretrained_models', 'deraining.pth')
+    if task == 'Deraindrop':
+        weights = os.path.join('pretrained_models', 'deraindrop.pth')
     return weights, parameters
 
 task    = args.task
@@ -58,11 +58,18 @@ if len(files) == 0:
     raise Exception(f'No files found at {inp_dir}')
 
 # Get model weights and parameters
-parameters = {'inp_channels':3, 'out_channels':3, 'dim':48, 'num_blocks':[4,6,6,8], 'heads':[1,2,4,8], 'ffn_expansion_factor':2.66, 'bias':False, 'LayerNorm_type':'WithBias'}
+parameters = {'inp_channels':4, 
+              'out_channels':3, 
+              'dim':16, 
+              'num_blocks':[2,4,4,8], 
+              'heads':[1,2,4,8], 
+              'ffn_expansion_factor':2.66, 
+              'bias':False, 
+              'LayerNorm_type':'WithBias'}
 weights, parameters = get_weights_and_parameters(task, parameters)
 
-load_arch = run_path(os.path.join('basicsr', 'models', 'archs', 'DRSformer_arch.py'))
-model = load_arch['DRSformer'](**parameters)
+load_arch = run_path(os.path.join('basicsr', 'models', 'archs', 'DRSformer2_seg_arch.py'))
+model = load_arch['DRSformer2_SEG'](**parameters)
 
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 model.to(device)
@@ -81,7 +88,7 @@ with torch.no_grad():
             torch.cuda.ipc_collect()
             torch.cuda.empty_cache()
 
-        if task == 'Deraining':
+        if task == 'Deraindrop':
             img = load_img(file_)
 
         input_ = torch.from_numpy(img).float().div(255.).permute(2,0,1).unsqueeze(0).to(device)
@@ -95,7 +102,7 @@ with torch.no_grad():
 
         if args.tile is None:
             ## Testing on the original resolution image
-            restored = model(input_)
+            restored, _, _ = model(input_)
         else:
             # test the image tile by tile
             b, c, h, w = input_.shape
@@ -129,7 +136,7 @@ with torch.no_grad():
 
         f = os.path.splitext(os.path.split(file_)[-1])[0]
         # stx()
-        if task == 'Deraining':
+        if task == 'Deraindrop':
             save_img((os.path.join(out_dir, f+'.png')), restored)
 
     print(f"\nRestored images are saved at {out_dir}")

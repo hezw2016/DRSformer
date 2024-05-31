@@ -6,6 +6,8 @@ import numbers
 
 from einops import rearrange
 
+from torch.autograd import Variable
+
 def to_3d(x):
     return rearrange(x, 'b c h w -> b (h w) c')
 
@@ -385,9 +387,105 @@ class Upsample(nn.Module):
     def forward(self, x):
         return self.body(x)
 
+# LOCATION Model
+class Generator(nn.Module):
+    def __init__(self, dim=32):
+        super(Generator, self).__init__()
+
+        self.dim = dim
+
+        self.det_conv0 = nn.Sequential(
+            nn.Conv2d(4, dim, 3, 1, 1),
+            nn.ReLU()
+            )
+        self.det_conv1 = nn.Sequential(
+            nn.Conv2d(dim, dim, 3, 1, 1),
+            nn.ReLU(),
+            nn.Conv2d(dim, dim, 3, 1, 1),
+            nn.ReLU()
+            )
+        self.det_conv2 = nn.Sequential(
+            nn.Conv2d(dim, dim, 3, 1, 1),
+            nn.ReLU(),
+            nn.Conv2d(dim, dim, 3, 1, 1),
+            nn.ReLU()
+            )
+        self.det_conv3 = nn.Sequential(
+            nn.Conv2d(dim, dim, 3, 1, 1),
+            nn.ReLU(),
+            nn.Conv2d(dim, dim, 3, 1, 1),
+            nn.ReLU()
+            )
+        self.det_conv4 = nn.Sequential(
+            nn.Conv2d(dim, dim, 3, 1, 1),
+            nn.ReLU(),
+            nn.Conv2d(dim, dim, 3, 1, 1),
+            nn.ReLU()
+            )
+        self.det_conv5 = nn.Sequential(
+            nn.Conv2d(dim, dim, 3, 1, 1),
+            nn.ReLU(),
+            nn.Conv2d(dim, dim, 3, 1, 1),
+            nn.ReLU()
+            )
+        self.conv_i = nn.Sequential(
+            nn.Conv2d(dim + dim, dim, 3, 1, 1),
+            nn.Sigmoid()
+            )
+        self.conv_f = nn.Sequential(
+            nn.Conv2d(dim + dim, dim, 3, 1, 1),
+            nn.Sigmoid()
+            )
+        self.conv_g = nn.Sequential(
+            nn.Conv2d(dim + dim, dim, 3, 1, 1),
+            nn.Tanh()
+            )
+        self.conv_o = nn.Sequential(
+            nn.Conv2d(dim + dim, dim, 3, 1, 1),
+            nn.Sigmoid()
+            )
+        self.det_conv_mask = nn.Sequential(
+            nn.Conv2d(dim, 1, 3, 1, 1),
+            # nn.Sigmoid()
+            )
+        
+
+    def forward(self, input):
+        ITERATION = 4
+        batch_size, row, col = input.size(0), input.size(2), input.size(3)
+        mask = Variable(torch.ones(batch_size, 1, row, col)).cuda() / 2.
+        h = Variable(torch.zeros(batch_size, self.dim, row, col)).cuda() 
+        c = Variable(torch.zeros(batch_size, self.dim, row, col)).cuda()
+        mask_list = []
+        for i in range(ITERATION):
+            x = torch.cat((input, mask), 1)
+            x = self.det_conv0(x)
+            resx = x
+            x = F.relu(self.det_conv1(x) + resx)
+            resx = x
+            x = F.relu(self.det_conv2(x) + resx)
+            resx = x
+            x = F.relu(self.det_conv3(x) + resx)
+            resx = x
+            x = F.relu(self.det_conv4(x) + resx)
+            resx = x
+            x = F.relu(self.det_conv5(x) + resx)
+            x = torch.cat((x, h), 1)
+            i = self.conv_i(x)
+            f = self.conv_f(x)
+            g = self.conv_g(x)
+            o = self.conv_o(x)
+            c = f * c + i * g
+            h = o * F.tanh(c)
+            mask = self.det_conv_mask(h)
+            mask_list.append(mask)
+        
+        return mask_list, mask
+
+
 class DRSformer2_SEG(nn.Module):
     def __init__(self,
-                 inp_channels=3,
+                 inp_channels=4,
                  out_channels=3,
                  dim=16,
                  num_blocks=[2, 4, 4, 8],
@@ -399,6 +497,8 @@ class DRSformer2_SEG(nn.Module):
 
         super(DRSformer2_SEG, self).__init__()
 
+        # self.mask_loc = Generator(dim=32)
+
         self.patch_embed = OverlapPatchEmbed(inp_channels, dim)
 
         self.encoder_level1 = nn.Sequential(*[
@@ -407,86 +507,97 @@ class DRSformer2_SEG(nn.Module):
 
         self.down1_2 = Downsample(dim)  ## From Level 1 to Level 2 ## 16 - 8 -32
         self.encoder_level2 = nn.Sequential(*[
-            TransformerBlock(dim=int(dim * 2 ** 1), num_heads=heads[1], ffn_expansion_factor=ffn_expansion_factor,
+            TransformerBlock(dim=int(dim * 2), num_heads=heads[1], ffn_expansion_factor=ffn_expansion_factor,
                              bias=bias, LayerNorm_type=LayerNorm_type) for i in range(num_blocks[1])])
 
-        self.down2_3 = Downsample(int(dim * 2 ** 1))  ## From Level 2 to Level 3 ## 32 - 16 - 64
+        self.down2_3 = Downsample(int(dim * 2))  ## From Level 2 to Level 3 ## 32 - 16 - 64
         self.encoder_level3 = nn.Sequential(*[
-            TransformerBlock(dim=int(dim * 2 ** 2), num_heads=heads[2], ffn_expansion_factor=ffn_expansion_factor,
+            TransformerBlock(dim=int(dim * 4), num_heads=heads[2], ffn_expansion_factor=ffn_expansion_factor,
                              bias=bias, LayerNorm_type=LayerNorm_type) for i in range(num_blocks[2])])
 
-        self.down3_4 = Downsample(int(dim * 2 ** 2))  ## From Level 3 to Level 4 ## 64 - 32 - 128
+        self.down3_4 = Downsample(int(dim * 4))  ## From Level 3 to Level 4 ## 64 - 32 - 128
         self.latent = nn.Sequential(*[
-            TransformerBlock(dim=int(dim * 2 ** 3), num_heads=heads[3], ffn_expansion_factor=ffn_expansion_factor,
+            TransformerBlock(dim=int(dim * 8), num_heads=heads[3], ffn_expansion_factor=ffn_expansion_factor,
                              bias=bias, LayerNorm_type=LayerNorm_type) for i in range(num_blocks[3])])
 
-        self.up4_3 = Upsample(int(dim * 2 ** 3))  ## From Level 4 to Level 3 ## 128 - 256 - 64
-        self.reduce_chan_level3 = nn.Conv2d(int(dim * 2 ** 3), int(dim * 2 ** 2), kernel_size=1, bias=bias) # dim x 8 -> dim x 4
+        self.up4_3 = Upsample(int(dim * 8))  ## From Level 4 to Level 3 ## 128 - 256 - 64
+        self.reduce_chan_level3 = nn.Conv2d(int(dim * 8), int(dim * 4), kernel_size=1, bias=bias) # dim x 8 -> dim x 4
         self.decoder_level3 = nn.Sequential(*[
-            TransformerBlock(dim=int(dim * 2 ** 2), num_heads=heads[2], ffn_expansion_factor=ffn_expansion_factor,
+            TransformerBlock(dim=int(dim * 4), num_heads=heads[2], ffn_expansion_factor=ffn_expansion_factor,
                              bias=bias, LayerNorm_type=LayerNorm_type) for i in range(num_blocks[2])])
 
-        self.up3_2 = Upsample(int(dim * 2 ** 2))  ## From Level 3 to Level 2 ## 64 - 128 - 32
-        self.reduce_chan_level2 = nn.Conv2d(int(dim * 2 ** 2), int(dim * 2 ** 1), kernel_size=1, bias=bias)
+        self.up3_2 = Upsample(int(dim * 4))  ## From Level 3 to Level 2 ## 64 - 128 - 32
+        self.reduce_chan_level2 = nn.Conv2d(int(dim * 4), int(dim * 2), kernel_size=1, bias=bias)
         self.decoder_level2 = nn.Sequential(*[
-            TransformerBlock(dim=int(dim * 2 ** 1), num_heads=heads[1], ffn_expansion_factor=ffn_expansion_factor,
+            TransformerBlock(dim=int(dim * 2), num_heads=heads[1], ffn_expansion_factor=ffn_expansion_factor,
                              bias=bias, LayerNorm_type=LayerNorm_type) for i in range(num_blocks[1])])
 
-        self.up2_1 = Upsample(int(dim * 2 ** 1))  ## From Level 2 to Level 1  (NO 1x1 conv to reduce channels) ## 32 - 64 - 16
-        self.reduce_chan_level1 = nn.Conv2d(int(dim * 2 ** 1), int(dim * 2 ** 0), kernel_size=1, bias=bias)
+        self.up2_1 = Upsample(int(dim * 2))  ## From Level 2 to Level 1  (NO 1x1 conv to reduce channels) ## 32 - 64 - 16
+        self.reduce_chan_level1 = nn.Conv2d(int(dim * 2), int(dim), kernel_size=1, bias=bias)
         self.decoder_level1 = nn.Sequential(*[
-            TransformerBlock(dim=int(dim * 2 ** 0), num_heads=heads[0], ffn_expansion_factor=ffn_expansion_factor,
+            TransformerBlock(dim=int(dim), num_heads=heads[0], ffn_expansion_factor=ffn_expansion_factor,
                              bias=bias, LayerNorm_type=LayerNorm_type) for i in range(num_blocks[0])])
 
-        self.output = nn.Conv2d(int(dim * 2 ** 0), out_channels, kernel_size=3, stride=1, padding=1, bias=bias)
+        self.output = nn.Conv2d(int(dim), out_channels, kernel_size=3, stride=1, padding=1, bias=bias)
 
         # self.seg_out4 = nn.Sequential(
-        #     nn.Conv2d(int(dim * 2 ** 3), out_channels=int(dim * 2), kernel_size=3, stride=1, padding=1, bias=bias), # generate a seg-mask
+        #     nn.Conv2d(int(dim * 8), out_channels=int(dim * 4), kernel_size=3, stride=1, padding=1, bias=bias), # generate a seg-mask
+        #     nn.ReLU(inplace=True),
+        #     nn.Conv2d(int(dim * 2 ** 2), out_channels=1, kernel_size=3, stride=1, padding=1, bias=bias),
+        #     nn.Sigmoid()
+        # )
+
+        # self.seg_out3 = nn.Sequential(
+        #     nn.Conv2d(int(dim * 4), out_channels=int(dim * 2), kernel_size=3, stride=1, padding=1, bias=bias), # generate a seg-mask
         #     nn.ReLU(inplace=True),
         #     nn.Conv2d(int(dim * 2), out_channels=1, kernel_size=3, stride=1, padding=1, bias=bias),
         #     nn.Sigmoid()
         # )
 
-        # self.seg_out3 = nn.Sequential(
-        #     nn.Conv2d(int(dim * 2 ** 2), out_channels=int(dim * 1), kernel_size=3, stride=1, padding=2, bias=bias, dilation=2), # generate a seg-mask
-        #     nn.ReLU(inplace=True),
-        #     nn.Conv2d(int(dim * 1), out_channels=1, kernel_size=3, stride=1, padding=2, bias=bias, dilation=2),
-        #     nn.Sigmoid()
-        # )
-
         # self.seg_out2 = nn.Sequential(
-        #     nn.Conv2d(int(dim * 2 ** 1), out_channels=int(dim // 2), kernel_size=3, stride=1, padding=2, bias=bias, dilation=2), # generate a seg-mask
+        #     nn.Conv2d(int(dim * 2), out_channels=int(dim), kernel_size=3, stride=1, padding=1, bias=bias), # generate a seg-mask
         #     nn.ReLU(inplace=True),
-        #     nn.Conv2d(int(dim // 2), out_channels=1, kernel_size=3, stride=1, padding=2, bias=bias, dilation=2),
+        #     nn.Conv2d(int(dim), out_channels=1, kernel_size=3, stride=1, padding=1, bias=bias),
         #     nn.Sigmoid()
         # )
 
-        self.seg_out1 = nn.Sequential(
-            nn.Conv2d(int(dim), out_channels=int(dim // 2), kernel_size=3, stride=1, padding=1, bias=bias), # generate a seg-mask
-            nn.ReLU(inplace=True),
-            nn.Conv2d(int(dim // 2), out_channels=1, kernel_size=3, stride=1, padding=1, bias=bias),
-            nn.Sigmoid()
-        )
+        # self.seg_out1 = nn.Sequential(
+        #     nn.Conv2d(int(dim), out_channels=int(dim // 2), kernel_size=3, stride=1, padding=1, bias=bias), # generate a seg-mask
+        #     nn.ReLU(inplace=True),
+        #     nn.Conv2d(int(dim // 2), out_channels=1, kernel_size=3, stride=1, padding=1, bias=bias),
+        #     nn.Sigmoid()
+        # )
         
 
     def forward(self, inp_img):
 
-        inp_enc_level1 = self.patch_embed(inp_img)
+        mask_list, mask = self.mask_loc(inp_img)
+
+        inp_enc_level1 = self.patch_embed(torch.cat([inp_img, mask], dim = 1))
+        # inp_enc_level1 = self.patch_embed(inp_img)
         out_enc_level1 = self.encoder_level1(inp_enc_level1)  
-        seg_mask1 = self.seg_out1(out_enc_level1)
+        # seg_mask1 = self.seg_out1(out_enc_level1)
 
         # seg_mask1 = inp_img[:,0,:,:].unsqueeze(1)
 
-        inp_enc_level2 = self.down1_2(out_enc_level1)
+        inp_enc_level2 = self.down1_2(out_enc_level1) # down1_2
         out_enc_level2 = self.encoder_level2(inp_enc_level2)
+        # seg_mask2 = self.seg_out2(out_enc_level2)
 
-        inp_enc_level3 = self.down2_3(out_enc_level2)
+        inp_enc_level3 = self.down2_3(out_enc_level2) # down2_3
         out_enc_level3 = self.encoder_level3(inp_enc_level3)
+        # seg_mask3 = self.seg_out3(out_enc_level3)
 
-        inp_enc_level4 = self.down3_4(out_enc_level3)
-        latent = self.latent(inp_enc_level4)
-
+        inp_enc_level4 = self.down3_4(out_enc_level3) # down3_4
         # seg_mask4 = self.seg_out4(inp_enc_level4)
+        latent = self.latent(inp_enc_level4)
+        # seg_mask4 = self.seg_out4(latent)
+        # seg_mask4 = F.interpolate(seg_mask4, scale_factor=8, mode='bilinear', align_corners=False)
+
+        
+        # seg_mask4 = self.seg_out4(latent)
+
+        
         # latent = self.latent(inp_enc_level4 * seg_mask4)  # this is the output of encoder, the features H/8 W/8 8C
 
         inp_dec_level3 = self.up4_3(latent)
@@ -507,17 +618,38 @@ class DRSformer2_SEG(nn.Module):
         inp_dec_level1 = torch.cat([inp_dec_level1, out_enc_level1], 1)
         inp_dec_level1 = self.reduce_chan_level1(inp_dec_level1)
         out_dec_level1 = self.decoder_level1(inp_dec_level1)
-        # seg_mask1 = self.seg_out1(inp_dec_level1)
-        # out_dec_level1 = self.decoder_level1(inp_dec_level1 * seg_mask1)
+        # seg_mask1 = self.seg_out1(out_dec_level1)
+        # out_dec_level1 = self.decoder_level1(inp_dec_level1)
 
-        # seg_mask = self.seg_out(latent)
         # seg_mask4 = F.interpolate(seg_mask4, scale_factor=8, mode='bilinear', align_corners=False)
         # seg_mask3 = F.interpolate(seg_mask3, scale_factor=4, mode='bilinear', align_corners=False)
         # seg_mask2 = F.interpolate(seg_mask2, scale_factor=2, mode='bilinear', align_corners=False)
+        # seg_mask1 = seg_mask1
 
-        out_dec_level1 = self.output(out_dec_level1) + inp_img
+        # out_dec_level1 = self.output(out_dec_level1) + inp_img
+        out_dec_level1 = self.output(out_dec_level1)
 
-        return out_dec_level1, [seg_mask1]
+        # take out_dec_level1 as input to re-generate the mask
+        # inp_img = out_dec_level1
+
+        # inp_enc_level1 = self.patch_embed(inp_img)
+        # out_enc_level1 = self.encoder_level1(inp_enc_level1)  
+        
+
+        # inp_enc_level2 = self.down1_2(out_enc_level1)
+        # out_enc_level2 = self.encoder_level2(inp_enc_level2)
+
+        # inp_enc_level3 = self.down2_3(out_enc_level2)
+        # out_enc_level3 = self.encoder_level3(inp_enc_level3)
+
+        # inp_enc_level4 = self.down3_4(out_enc_level3)
+        # latent = self.latent(inp_enc_level4)
+
+        # seg_mask4_new = self.seg_out4(latent)
+        # seg_mask4_new = F.interpolate(seg_mask4_new, scale_factor=8, mode='bilinear', align_corners=False)
+
+
+        return out_dec_level1, mask_list, [mask]
 
 if __name__ == '__main__':
     input = torch.rand(1, 3, 256, 256)

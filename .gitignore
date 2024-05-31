@@ -25,3 +25,5 @@ basicsr/version.py
 localrun.sh
 old_exp
 old_tb_logger
+test/input/*
+test/output/*

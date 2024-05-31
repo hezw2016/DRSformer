@@ -1,5 +1,6 @@
 # general settings
-name: Deraindrop_SEGinlevel1tail_MSE_p256_d16_b2448(diff)
+name: 0003_Deraindrop_p256_d16_b1224(diff)_lrto1e-5
+# name: 013_Deraindrop_SEGbefore_MSE_p256_d16_b2448(diff)
 # name: Deraindrop_baseline_p256_d16_b2448
 model_type: ImageCleanModel
 scale: 1
@@ -44,12 +45,12 @@ datasets:
 
 # network structures
 network_g:
-  type: DRSformer2_SEG
+  type: DRSformer2
   inp_channels: 3
   out_channels: 3
   dim: 16
-  num_blocks: [2,4,4,8] # original: 4 6 6 8
-  heads: [1,2,4,8]
+  num_blocks: [1,2,2,4] # original: 4 6 6 8
+  heads: [1,2,2,4]
   ffn_expansion_factor: 2.66
   bias: False
   LayerNorm_type: WithBias
@@ -73,7 +74,7 @@ train:
     type: CosineAnnealingRestartCyclicLR
     periods: [100000, 200000]       
     restart_weights: [1,1]
-    eta_mins: [0.0003,0.000001]   
+    eta_mins: [0.0003,0.00001]   
   
   mixing_augs:
     mixup: false ############
