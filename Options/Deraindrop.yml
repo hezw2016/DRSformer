@@ -1,8 +1,10 @@
 # general settings
-name: 0003_Deraindrop_p256_d16_b1224(diff)_lrto1e-5
+# name: 0003_Deraindrop_p256_d16_b1224_lrto1e-5
+name: 0007_Deraindrop_SEGinlevel4tail_MSE_p256_d16_b1224(absdiff)_lrto1e-6
 # name: 013_Deraindrop_SEGbefore_MSE_p256_d16_b2448(diff)
 # name: Deraindrop_baseline_p256_d16_b2448
-model_type: ImageCleanModel
+model_type: DeraindropModel
+# model_type: ImageCleanModel
 scale: 1
 num_gpu: 1
 manual_seed: 666
@@ -45,7 +47,7 @@ datasets:
 
 # network structures
 network_g:
-  type: DRSformer2
+  type: DRSformer2_SEG
   inp_channels: 3
   out_channels: 3
   dim: 16
@@ -74,7 +76,7 @@ train:
     type: CosineAnnealingRestartCyclicLR
     periods: [100000, 200000]       
     restart_weights: [1,1]
-    eta_mins: [0.0003,0.00001]   
+    eta_mins: [0.0003,0.000001]   
   
   mixing_augs:
     mixup: false ############
@@ -116,6 +118,16 @@ val:
       type: calculate_ssim
       crop_border: 0
       test_y_channel: true
+      better: higher
+    psnr_color: # metric name, can be arbitrary
+      type: calculate_psnr
+      crop_border: 0
+      test_y_channel: false
+      better: higher
+    ssim_color:
+      type: calculate_ssim
+      crop_border: 0
+      test_y_channel: false
       better: higher
 
 # logging settings

@@ -540,12 +540,12 @@ class DRSformer2_SEG(nn.Module):
 
         self.output = nn.Conv2d(int(dim), out_channels, kernel_size=3, stride=1, padding=1, bias=bias)
 
-        # self.seg_out4 = nn.Sequential(
-        #     nn.Conv2d(int(dim * 8), out_channels=int(dim * 4), kernel_size=3, stride=1, padding=1, bias=bias), # generate a seg-mask
-        #     nn.ReLU(inplace=True),
-        #     nn.Conv2d(int(dim * 2 ** 2), out_channels=1, kernel_size=3, stride=1, padding=1, bias=bias),
-        #     nn.Sigmoid()
-        # )
+        self.seg_out4 = nn.Sequential(
+            nn.Conv2d(int(dim * 8), out_channels=int(dim * 4), kernel_size=3, stride=1, padding=1, bias=bias), # generate a seg-mask
+            nn.ReLU(inplace=True),
+            nn.Conv2d(int(dim * 2 ** 2), out_channels=1, kernel_size=3, stride=1, padding=1, bias=bias),
+            nn.Sigmoid()
+        )
 
         # self.seg_out3 = nn.Sequential(
         #     nn.Conv2d(int(dim * 4), out_channels=int(dim * 2), kernel_size=3, stride=1, padding=1, bias=bias), # generate a seg-mask
@@ -571,10 +571,10 @@ class DRSformer2_SEG(nn.Module):
 
     def forward(self, inp_img):
 
-        mask_list, mask = self.mask_loc(inp_img)
+        # mask_list, mask = self.mask_loc(inp_img)
 
-        inp_enc_level1 = self.patch_embed(torch.cat([inp_img, mask], dim = 1))
-        # inp_enc_level1 = self.patch_embed(inp_img)
+        # inp_enc_level1 = self.patch_embed(torch.cat([inp_img, mask], dim = 1))
+        inp_enc_level1 = self.patch_embed(inp_img)
         out_enc_level1 = self.encoder_level1(inp_enc_level1)  
         # seg_mask1 = self.seg_out1(out_enc_level1)
 
@@ -591,8 +591,8 @@ class DRSformer2_SEG(nn.Module):
         inp_enc_level4 = self.down3_4(out_enc_level3) # down3_4
         # seg_mask4 = self.seg_out4(inp_enc_level4)
         latent = self.latent(inp_enc_level4)
-        # seg_mask4 = self.seg_out4(latent)
-        # seg_mask4 = F.interpolate(seg_mask4, scale_factor=8, mode='bilinear', align_corners=False)
+        seg_mask4 = self.seg_out4(latent)
+        seg_mask4 = F.interpolate(seg_mask4, scale_factor=8, mode='bilinear', align_corners=False)
 
         
         # seg_mask4 = self.seg_out4(latent)
@@ -649,7 +649,9 @@ class DRSformer2_SEG(nn.Module):
         # seg_mask4_new = F.interpolate(seg_mask4_new, scale_factor=8, mode='bilinear', align_corners=False)
 
 
-        return out_dec_level1, mask_list, [mask]
+        # return out_dec_level1, mask_list, [mask]
+        return out_dec_level1, seg_mask4, seg_mask4
+
 
 if __name__ == '__main__':
     input = torch.rand(1, 3, 256, 256)

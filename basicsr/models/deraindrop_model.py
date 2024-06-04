@@ -187,10 +187,11 @@ class DeraindropModel(BaseModel):
         # gt_mask = (torch.abs(gray.unsqueeze(1)) > (30/255)).type(torch.float32)
         # gt_mask = torch.clamp(torch.abs(gray.unsqueeze(1)) * 2, min=20/255, max=1)
         gt_mask = torch.abs(gray.unsqueeze(1))
+        # gt_mask = gray.unsqueeze(1)
 
         for mask in masks:
             # l_seg += self.cri_seg(torch.sigmoid(mask), gt_mask)
-            l_seg += self.cri_seg(mask, gt_mask) # [0.8 0.6 0.4]
+            l_seg += self.cri_seg(mask, gt_mask) # 
 
         # gt_mask_new = torch.zeros(gt_mask.shape).to(self.device)
         # for mask_n in masks_n:
