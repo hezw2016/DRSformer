@@ -385,7 +385,7 @@ class Upsample(nn.Module):
     def forward(self, x):
         return self.body(x)
 
-class DRSformer2(nn.Module):
+class DRSformer2_softcon(nn.Module):
     def __init__(self,
                  inp_channels=3,
                  out_channels=3,
@@ -397,7 +397,7 @@ class DRSformer2(nn.Module):
                  LayerNorm_type='WithBias'  ## Other option 'BiasFree'
                  ):
 
-        super(DRSformer2, self).__init__()
+        super(DRSformer2_softcon, self).__init__()
 
         # self.mask_loc = Generator(dim=32)
 
@@ -499,12 +499,13 @@ class DRSformer2(nn.Module):
         
 
         feat = self.forward_feature(x)
-        R, U = torch.split(feat, (3, 3), dim=1)
+        R, U, w = torch.split(feat, (3, 3, 3), dim=1)
         # U = 2 * torch.sigmoid(U) - 1
-        output = x - U * R
-        output = output / (1 - U)
+        U_w = U * w
+        output = x - U_w * R
+        output = output / (1 - torch.abs(U_w))
 
-        return output
+        return output, U
 
 if __name__ == '__main__':
     input = torch.rand(1, 3, 256, 256)

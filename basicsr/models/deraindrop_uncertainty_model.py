@@ -48,11 +48,11 @@ class Mixing_Augment:
             target, input_ = self.augments[augment](target, input_)
         return target, input_
 
-class ImageCleanModel(BaseModel):
+class DeraindropUNCModel(BaseModel):
     """Base Deblur model for single image deblur."""
 
     def __init__(self, opt):
-        super(ImageCleanModel, self).__init__(opt)
+        super(DeraindropUNCModel, self).__init__(opt)
 
         # define network
 
@@ -158,12 +158,12 @@ class ImageCleanModel(BaseModel):
 
     def optimize_parameters(self, current_iter):
         self.optimizer_g.zero_grad()
-        preds = self.net_g(self.lq) # forward inference
+        preds, masks = self.net_g(self.lq) # forward inference
         if not isinstance(preds, list):
             preds = [preds]
 
-        # if not isinstance(masks, list):
-        #     masks = [masks]
+        if not isinstance(masks, list):
+            masks = [masks]
 
         # if not isinstance(masks_n, list):
         #     masks_n = [masks_n]
@@ -174,17 +174,29 @@ class ImageCleanModel(BaseModel):
 
         loss_dict = OrderedDict()
         # pixel loss
-        l_pix = 0.
+        # l_pix = 0.
         # l_seg = 0.
+        l_unc = 0.
         # l_seg2 = 0.
 
-        weights = [1]
-
-        for index, pred in enumerate(preds):
-            l_pix += weights[index] * self.cri_pix(pred, self.gt)
-
-        # for pred in preds:
-        #     l_pix += self.cri_pix(pred, self.gt)
+        # weights = [1]
+        # for idx, pred in enumerate(preds):
+        #     s = torch.exp(masks[idx])
+        #     pred_ = torch.mul(pred, s)
+        #     gt_ = torch.mul(self.gt, s)
+        #     l_pix += weights[idx] * self.cri_pix(pred_, gt_)
+        
+        s = torch.exp(-masks[0])
+        pred_ = torch.mul(preds[0], s)
+        gt_ = torch.mul(self.gt, s)
+        l_unc = self.cri_pix(pred_, gt_) + 2*torch.mean(masks[0])
+        # variances = masks
+        # var_weights = [1]
+        # for index, var in enumerate(masks):
+        #     s = torch.exp(-var)
+        #     pred_ = torch.mul(preds[index], s)
+        #     gt_ = torch.mul(self.gt, s)
+        #     l_unc += var_weights[index] * (self.cri_pix(pred_, gt_) + 2 * torch.mean(var))
         
         # try to calculate the gt_mask
         # diff = self.gt - self.lq # B 3 H W
@@ -192,21 +204,24 @@ class ImageCleanModel(BaseModel):
         # gt_mask = (torch.abs(gray.unsqueeze(1)) > (30/255)).type(torch.float32)
         # gt_mask = torch.clamp(torch.abs(gray.unsqueeze(1)) * 2, min=20/255, max=1)
         # gt_mask = torch.abs(gray.unsqueeze(1))
+        # gt_mask = gray.unsqueeze(1)
 
-        # for mask in masks:
+        # mask_weights = [1]
+        # for index, mask in enumerate(masks):
             # l_seg += self.cri_seg(torch.sigmoid(mask), gt_mask)
-            # l_seg += self.cri_seg(mask, gt_mask) # [0.8 0.6 0.4]
+            # l_seg += mask_weights[index] * self.cri_seg(mask, gt_mask) # 
 
         # gt_mask_new = torch.zeros(gt_mask.shape).to(self.device)
         # for mask_n in masks_n:
         #     l_seg2 += self.cri_seg2(mask_n, gt_mask_new)
 
-        loss_dict['l_pix'] = l_pix
-        # loss_dict['l_seg'] = l_seg
+        # loss_dict['l_pix'] = l_pix
+        loss_dict['l_unc'] = l_unc
         # loss_dict['l_seg2'] = l_seg2
 
         # l_total = l_pix + l_seg + l_seg2 * 0.1
-        l_total = l_pix
+        # l_total = l_pix + l_unc
+        l_total = l_unc
         l_total.backward()
 
 
@@ -231,7 +246,7 @@ class ImageCleanModel(BaseModel):
         self.nonpad_test(img)
         _, _, h, w = self.output.size()
         self.output = self.output[:, :, 0:h - mod_pad_h * scale, 0:w - mod_pad_w * scale]
-        # self.mask = self.mask[:, :, 0:h - mod_pad_h * scale, 0:w - mod_pad_w * scale]
+        self.mask = self.mask[:, :, 0:h - mod_pad_h * scale, 0:w - mod_pad_w * scale]
 
     def nonpad_test(self, img=None):
         if img is None:
@@ -239,28 +254,65 @@ class ImageCleanModel(BaseModel):
         if hasattr(self, 'net_g_ema'):
             self.net_g_ema.eval()
             with torch.no_grad():
-                pred = self.net_g_ema(img)
+                pred, mask = self.net_g_ema(img)
             if isinstance(pred, list):
                 pred = pred[-1]
-            # if isinstance(mask, list):
-            #     mask = mask[-1]
+            if isinstance(mask, list):
+                mask = mask[-1]
             # if isinstance(mask_n, list):
             #     mask_n = mask_n[-1]
             self.output = pred
-            # self.mask = mask
+            if mask.size(1) > 1:
+                convert = mask.new(1,3,1,1)
+                convert[0, 0, 0, 0] = 65.738
+                convert[0, 1, 0, 0] = 129.057
+                convert[0, 2, 0, 0] = 25.064
+                mask.mul_(convert).div_(255)
+                mask = mask.sum(dim=1, keepdim=True)
+            self.mask = self.norm_var(mask)
         else:
             self.net_g.eval()
             with torch.no_grad():
-                pred = self.net_g(img)
+                pred, mask = self.net_g(img)
             if isinstance(pred, list):
                 pred = pred[-1]
-            # if isinstance(mask, list):
-            #     mask = mask[-1]
+            if isinstance(mask, list):
+                mask = mask[-1]
             # if isinstance(mask_n, list):
             #     mask_n = mask_n[-1]
             self.output = pred
-            # self.mask = mask # access the self.pred and mask in the inference phase
+            if mask.size(1) > 1:
+                convert = mask.new(1,3,1,1)
+                convert[0, 0, 0, 0] = 65.738
+                convert[0, 1, 0, 0] = 129.057
+                convert[0, 2, 0, 0] = 25.064
+                mask.mul_(convert).div_(255)
+                mask = mask.sum(dim=1, keepdim=True)
+            self.mask = self.norm_var(mask)  # access the self.pred and mask in the inference phase
             self.net_g.train()
+    
+    def norm_var(self, var):
+        # img = var[0, 0, :, :]
+        img = var
+        pmin = torch.min(img)
+        pmax = torch.max(img)
+        img = ((img - pmin) / (pmax - pmin + 0.000001)) * 255 # float在[0，1]之间，转换成0-255
+        img.to(torch.uint8)
+        print(pmax)
+        print(pmin)
+        print(img)
+        # img = img.astype(np.uint8)  # 转成unit8
+        # img = cv2.applyColorMap(img, cv2.COLORMAP_JET)  # 生成heat map
+        return img
+
+    # def draw_features(x, savename):
+    #     img = x[0, 0, :, :]
+    #     pmin = np.min(img)
+    #     pmax = np.max(img)
+    #     img = ((img - pmin) / (pmax - pmin + 0.000001)) * 255  # float在[0，1]之间，转换成0-255
+    #     img = img.astype(np.uint8)  # 转成unit8
+    #     img = cv2.applyColorMap(img, cv2.COLORMAP_JET)  # 生成heat map
+        # cv2.imwrite(savename,img)
 
     def dist_validation(self, dataloader, current_iter, tb_logger, save_img, rgb2bgr, use_image):
         if os.environ['LOCAL_RANK'] == '0':
@@ -297,7 +349,7 @@ class ImageCleanModel(BaseModel):
             test()
 
             tb_logger.add_images('inference/lq', self.lq, current_iter)
-            # tb_logger.add_images('inference/mask_pred', self.mask, current_iter)
+            tb_logger.add_images('inference/uncertainty_pred', self.mask, current_iter)
             tb_logger.add_images('inference/output', self.output, current_iter)
 
             visuals = self.get_current_visuals()
@@ -309,7 +361,7 @@ class ImageCleanModel(BaseModel):
             # tentative for out of GPU memory
             del self.lq
             del self.output
-            # del self.mask
+            del self.mask
             torch.cuda.empty_cache()
 
             if save_img:
@@ -367,7 +419,7 @@ class ImageCleanModel(BaseModel):
 
     def _log_validation_metric_values(self, current_iter, dataset_name,
                                       tb_logger):
-        log_str = f'Validation {dataset_name},\t'
+        log_str = f'Validation {dataset_name},\n'
         for metric, value in self.metric_results.items():
             log_str += f'\t # {metric}: {value:.4f}'
             if hasattr(self, 'best_metric_results'):
@@ -385,7 +437,7 @@ class ImageCleanModel(BaseModel):
         out_dict = OrderedDict()
         out_dict['lq'] = self.lq.detach().cpu()
         out_dict['result'] = self.output.detach().cpu()
-        # out_dict['mask'] = self.mask.detach().cpu()
+        out_dict['mask'] = self.mask.detach().cpu()
         if hasattr(self, 'gt'):
             out_dict['gt'] = self.gt.detach().cpu()
         return out_dict

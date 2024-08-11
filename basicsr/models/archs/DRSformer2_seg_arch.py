@@ -8,6 +8,9 @@ from einops import rearrange
 
 from torch.autograd import Variable
 
+from einops.layers.torch import Rearrange
+
+
 def to_3d(x):
     return rearrange(x, 'b c h w -> b (h w) c')
 
@@ -481,6 +484,112 @@ class Generator(nn.Module):
             mask_list.append(mask)
         
         return mask_list, mask
+    
+# # This is the draft code of our ESA block, we provide it here for those who are eager to know
+# # the implementation details. The official version will be released later.
+
+
+# def default_conv(in_channels, out_channels, kernel_size, stride=1, padding=None, bias=True, groups=1):
+#        if not padding and stride==1:
+#            padding = kernel_size // 2
+#        return nn.Conv2d(in_channels, out_channels, kernel_size, stride=stride, padding=padding, bias=bias, groups=groups)
+       
+# class ESA(nn.Module):
+#      def __init__(self, n_feats, conv=default_conv):
+#          super(ESA, self).__init__()
+#          f = n_feats // 4
+#          self.conv1 = conv(n_feats, f, kernel_size=1)
+#          self.conv_f = conv(f, f, kernel_size=1)
+#          self.conv_max = conv(f, f, kernel_size=3, padding=1)
+#          self.conv2 = conv(f, f, kernel_size=3, stride=2, padding=0)
+#          self.conv3 = conv(f, f, kernel_size=3, padding=1)
+#          self.conv3_ = conv(f, f, kernel_size=3, padding=1)
+#          self.conv4 = conv(f, n_feats, kernel_size=1)
+#          self.sigmoid = nn.Sigmoid()
+#          self.relu = nn.ReLU(inplace=True)
+  
+#      def forward(self, x, f):
+#          c1_ = self.conv1(f)
+#          c1 = self.conv2(c1_)
+#          v_max = F.max_pool2d(c1, kernel_size=7, stride=3)
+#          v_range = self.relu(self.conv_max(v_max))
+#          c3 = self.relu(self.conv3(v_range))
+#          c3 = self.conv3_(c3)
+#          c3 = F.interpolate(c3, (x.size(2), x.size(3)), mode='bilinear', aligned_corners=False) 
+#          cf = self.conv_f(c1_)
+#          c4 = self.conv4(c3+cf)
+#          m = self.sigmoid(c4)
+         
+#          return x * m
+
+class ESA(nn.Module):
+    def __init__(self, dim):
+        super(ESA, self).__init__()
+        f = dim // 4
+        self.conv1 = nn.Conv2d(dim, f, kernel_size=1, padding=0, stride=1)
+        self.conv2 = nn.Conv2d(f, f, kernel_size=3, padding=1, stride=2)
+        self.conv_group = nn.Sequential(
+            nn.Conv2d(f, f, kernel_size=3, padding=1, stride=1),
+            nn.ReLU(inplace = True),
+            nn.Conv2d(f, f, kernel_size=3, padding=1, stride=1)
+        )
+        self.conv3 = nn.Conv2d(f, 1, kernel_size=1, padding=0, stride=1)
+        self.sigmoid = nn.Sigmoid()
+
+    def forward(self, x):
+        f1 = self.conv1(x)
+        f2 = self.conv2(f1)
+        f_in = self.conv_group(f2)
+        f_in = F.interpolate(f_in, (x.size(2), x.size(3)), mode='bilinear', align_corners=False)
+        f_out = self.conv3(f1 + f_in)
+        spatial = self.sigmoid(f_out)
+        return spatial
+    
+# class SpatialAttention(nn.Module):
+#     def __init__(self):
+#         super(SpatialAttention, self).__init__()
+#         self.sa = nn.Conv2d(2, 1, 7, padding=3, padding_mode='reflect' ,bias=True)
+
+#     def forward(self, x):
+#         x_avg = torch.mean(x, dim=1, keepdim=True)
+#         x_max, _ = torch.max(x, dim=1, keepdim=True)
+#         x2 = torch.concat([x_avg, x_max], dim=1)
+#         sattn = self.sa(x2)
+#         return sattn
+
+
+class ChannelAttention(nn.Module):
+    def __init__(self, dim, reduction = 8):
+        super(ChannelAttention, self).__init__()
+        self.gap = nn.AdaptiveAvgPool2d(1)
+        self.ca = nn.Sequential(
+            nn.Conv2d(dim, dim // reduction, 1, padding=0, bias=True),
+            nn.ReLU(inplace=True),
+            nn.Conv2d(dim // reduction, dim, 1, padding=0, bias=True),
+            nn.Sigmoid()
+        )
+
+    def forward(self, x):
+        x_gap = self.gap(x)
+        cattn = self.ca(x_gap)
+        return cattn
+
+    
+class PixelAttention(nn.Module):
+    def __init__(self, dim):
+        super(PixelAttention, self).__init__()
+        self.pa2 = nn.Conv2d(2 * dim, dim, 7, padding=3, padding_mode='reflect' ,groups=dim, bias=True)
+        self.sigmoid = nn.Sigmoid()
+
+    def forward(self, x, pattn1):
+        B, C, H, W = x.shape
+        x = x.unsqueeze(dim=2) # B, C, 1, H, W
+        pattn1 = pattn1.unsqueeze(dim=2) # B, C, 1, H, W
+        x2 = torch.cat([x, pattn1], dim=2) # B, C, 2, H, W
+        x2 = Rearrange('b c t h w -> b (c t) h w')(x2)
+        pattn2 = self.pa2(x2)
+        pattn2 = self.sigmoid(pattn2)
+        return pattn2
 
 
 class DRSformer2_SEG(nn.Module):
@@ -533,19 +642,30 @@ class DRSformer2_SEG(nn.Module):
                              bias=bias, LayerNorm_type=LayerNorm_type) for i in range(num_blocks[1])])
 
         self.up2_1 = Upsample(int(dim * 2))  ## From Level 2 to Level 1  (NO 1x1 conv to reduce channels) ## 32 - 64 - 16
-        self.reduce_chan_level1 = nn.Conv2d(int(dim * 2), int(dim), kernel_size=1, bias=bias)
+        # self.reduce_chan_level1 = nn.Conv2d(int(dim * 2), int(dim), kernel_size=1, bias=bias)
         self.decoder_level1 = nn.Sequential(*[
-            TransformerBlock(dim=int(dim), num_heads=heads[0], ffn_expansion_factor=ffn_expansion_factor,
+            TransformerBlock(dim=int(dim * 2), num_heads=heads[0], ffn_expansion_factor=ffn_expansion_factor,
                              bias=bias, LayerNorm_type=LayerNorm_type) for i in range(num_blocks[0])])
+        
+        # self.decoder_level0 = nn.Sequential(*[
+        #     TransformerBlock(dim=int(dim * 2), num_heads=4, ffn_expansion_factor=ffn_expansion_factor,
+        #                      bias=bias, LayerNorm_type=LayerNorm_type) for i in range(1)])
 
-        self.output = nn.Conv2d(int(dim), out_channels, kernel_size=3, stride=1, padding=1, bias=bias)
+        self.output = nn.Conv2d(int(dim * 2), out_channels, kernel_size=3, stride=1, padding=1, bias=bias)
+        # self.output4 = nn.Conv2d(int(dim * 8), out_channels, kernel_size=3, stride=1, padding=1, bias=bias)
+        # self.output3 = nn.Conv2d(int(dim * 4), out_channels, kernel_size=3, stride=1, padding=1, bias=bias)
+        # self.output2 = nn.Conv2d(int(dim * 2), out_channels, kernel_size=3, stride=1, padding=1, bias=bias)
 
         self.seg_out4 = nn.Sequential(
             nn.Conv2d(int(dim * 8), out_channels=int(dim * 4), kernel_size=3, stride=1, padding=1, bias=bias), # generate a seg-mask
             nn.ReLU(inplace=True),
-            nn.Conv2d(int(dim * 2 ** 2), out_channels=1, kernel_size=3, stride=1, padding=1, bias=bias),
-            nn.Sigmoid()
+            nn.Conv2d(int(dim * 2 ** 2), out_channels=3, kernel_size=3, stride=1, padding=1, bias=bias),
+            # nn.Sigmoid()
         )
+
+        
+        # self.ca4 = ChannelAttention(dim*8, reduction=8)
+        # self.pa4 = PixelAttention(dim*8)
 
         # self.seg_out3 = nn.Sequential(
         #     nn.Conv2d(int(dim * 4), out_channels=int(dim * 2), kernel_size=3, stride=1, padding=1, bias=bias), # generate a seg-mask
@@ -564,12 +684,11 @@ class DRSformer2_SEG(nn.Module):
         # self.seg_out1 = nn.Sequential(
         #     nn.Conv2d(int(dim), out_channels=int(dim // 2), kernel_size=3, stride=1, padding=1, bias=bias), # generate a seg-mask
         #     nn.ReLU(inplace=True),
-        #     nn.Conv2d(int(dim // 2), out_channels=1, kernel_size=3, stride=1, padding=1, bias=bias),
-        #     nn.Sigmoid()
+        #     nn.Conv2d(int(dim // 2), out_channels=3, kernel_size=3, stride=1, padding=1, bias=bias),
+        #     # nn.Sigmoid()
         # )
-        
 
-    def forward(self, inp_img):
+    def forward_feature(self, inp_img):
 
         # mask_list, mask = self.mask_loc(inp_img)
 
@@ -577,25 +696,34 @@ class DRSformer2_SEG(nn.Module):
         inp_enc_level1 = self.patch_embed(inp_img)
         out_enc_level1 = self.encoder_level1(inp_enc_level1)  
         # seg_mask1 = self.seg_out1(out_enc_level1)
-
-        # seg_mask1 = inp_img[:,0,:,:].unsqueeze(1)
+        # w1 = 1 - seg_mask1
 
         inp_enc_level2 = self.down1_2(out_enc_level1) # down1_2
         out_enc_level2 = self.encoder_level2(inp_enc_level2)
         # seg_mask2 = self.seg_out2(out_enc_level2)
+        # w2 = 1 - seg_mask2
+        # seg_mask2 = F.interpolate(seg_mask2, scale_factor=2, mode='bilinear', align_corners=False)
 
         inp_enc_level3 = self.down2_3(out_enc_level2) # down2_3
         out_enc_level3 = self.encoder_level3(inp_enc_level3)
         # seg_mask3 = self.seg_out3(out_enc_level3)
+        # w3 = 1 - seg_mask3
+        # seg_mask3 = F.interpolate(seg_mask3, scale_factor=4, mode='bilinear', align_corners=False)
 
         inp_enc_level4 = self.down3_4(out_enc_level3) # down3_4
-        # seg_mask4 = self.seg_out4(inp_enc_level4)
         latent = self.latent(inp_enc_level4)
+
         seg_mask4 = self.seg_out4(latent)
+        # cattn4 = self.ca4(latent)
+        # pattn1 = seg_mask4 + cattn4
+        # pattn2 = self.pa4(latent, pattn1)
+        # latent = latent + latent * pattn2
+        # w4 = 1 - seg_mask4
         seg_mask4 = F.interpolate(seg_mask4, scale_factor=8, mode='bilinear', align_corners=False)
 
         
-        # seg_mask4 = self.seg_out4(latent)
+
+        
 
         
         # latent = self.latent(inp_enc_level4 * seg_mask4)  # this is the output of encoder, the features H/8 W/8 8C
@@ -616,8 +744,10 @@ class DRSformer2_SEG(nn.Module):
 
         inp_dec_level1 = self.up2_1(out_dec_level2)
         inp_dec_level1 = torch.cat([inp_dec_level1, out_enc_level1], 1)
-        inp_dec_level1 = self.reduce_chan_level1(inp_dec_level1)
+        # inp_dec_level1 = self.reduce_chan_level1(inp_dec_level1)
         out_dec_level1 = self.decoder_level1(inp_dec_level1)
+        # out_dec_level1 = self.decoder_level0(self.decoder_level1(inp_dec_level1))
+
         # seg_mask1 = self.seg_out1(out_dec_level1)
         # out_dec_level1 = self.decoder_level1(inp_dec_level1)
 
@@ -628,6 +758,12 @@ class DRSformer2_SEG(nn.Module):
 
         # out_dec_level1 = self.output(out_dec_level1) + inp_img
         out_dec_level1 = self.output(out_dec_level1)
+        
+
+
+        # out_dec_level2 = F.interpolate(self.output2(out_dec_level2), scale_factor=2, mode='bilinear', align_corners=False)
+        # out_dec_level3 = F.interpolate(self.output3(out_dec_level3), scale_factor=4, mode='bilinear', align_corners=False)
+        # out_dec_level4 = F.interpolate(self.output4(latent), scale_factor=8, mode='bilinear', align_corners=False)
 
         # take out_dec_level1 as input to re-generate the mask
         # inp_img = out_dec_level1
@@ -650,7 +786,46 @@ class DRSformer2_SEG(nn.Module):
 
 
         # return out_dec_level1, mask_list, [mask]
-        return out_dec_level1, seg_mask4, seg_mask4
+        # return out_dec_level1, [seg_mask1, seg_mask2, seg_mask3, seg_mask4], seg_mask4
+        return out_dec_level1, [seg_mask4]
+    
+    def forward(self, x):
+        # R, U_list, seg_mask4 = self.forward_feature(x)
+        # U = U_list[-1]
+
+        # feat = self.forward_feature(x)
+        # R, U = torch.split(feat, (3, 3), dim=1)
+        # # U = 2 * torch.sigmoid(U) - 1
+        # output = x - U * R
+        # output = output / (1 - torch.abs(U))
+
+        feat, seg_list = self.forward_feature(x)
+        R, U = torch.split(feat, (3, 3), dim=1)
+        output = x - U * R
+        output = output / (1 - U)
+
+        # inp_ = (1 - U) * gt + U * R
+
+        # take out_dec_level1 as input to re-generate the mask
+        # inp_img = output
+
+        # inp_enc_level1 = self.patch_embed(inp_img)
+        # out_enc_level1 = self.encoder_level1(inp_enc_level1)  
+        
+
+        # inp_enc_level2 = self.down1_2(out_enc_level1)
+        # out_enc_level2 = self.encoder_level2(inp_enc_level2)
+
+        # inp_enc_level3 = self.down2_3(out_enc_level2)
+        # out_enc_level3 = self.encoder_level3(inp_enc_level3)
+
+        # inp_enc_level4 = self.down3_4(out_enc_level3)
+        # latent = self.latent(inp_enc_level4)
+
+        # seg_mask4_new = self.seg_out4(latent)
+        # seg_mask4_new = F.interpolate(seg_mask4_new, scale_factor=8, mode='bilinear', align_corners=False)
+
+        return output, seg_list, [U, R]
 
 
 if __name__ == '__main__':

@@ -58,11 +58,11 @@ if len(files) == 0:
     raise Exception(f'No files found at {inp_dir}')
 
 # Get model weights and parameters
-parameters = {'inp_channels':4, 
+parameters = {'inp_channels':3, 
               'out_channels':3, 
               'dim':16, 
-              'num_blocks':[2,4,4,8], 
-              'heads':[1,2,4,8], 
+              'num_blocks':[1,2,2,4], 
+              'heads':[1,2,2,4], 
               'ffn_expansion_factor':2.66, 
               'bias':False, 
               'LayerNorm_type':'WithBias'}
@@ -102,7 +102,7 @@ with torch.no_grad():
 
         if args.tile is None:
             ## Testing on the original resolution image
-            restored, _, _ = model(input_)
+            restored, uncertainty = model(input_)
         else:
             # test the image tile by tile
             b, c, h, w = input_.shape
@@ -126,13 +126,20 @@ with torch.no_grad():
                     W[..., h_idx:(h_idx+tile), w_idx:(w_idx+tile)].add_(out_patch_mask)
             restored = E.div_(W)
 
-        restored = torch.clamp(restored, 0, 1)
+        restored = torch.clamp(restored[-1], 0, 1)
+        uncertainty = uncertainty[-1]
 
         # Unpad the output
         restored = restored[:,:,:height,:width]
+        uncertainty = uncertainty[:,:,:height,:width]
+        uncertainty = torch.exp(uncertainty)
 
         restored = restored.permute(0, 2, 3, 1).cpu().detach().numpy()
         restored = img_as_ubyte(restored[0])
+
+        uncertainty = uncertainty.permute(0, 2, 3, 1).cpu().detach().numpy()
+        print(uncertainty[0])
+        
 
         f = os.path.splitext(os.path.split(file_)[-1])[0]
         # stx()

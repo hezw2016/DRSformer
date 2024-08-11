@@ -1,10 +1,10 @@
 # general settings
-name: 0001_Deraindrop_p256_d16_b1224(baseline)_softcon_U3_rcr
+name: 0002_Deraindrop_p256_d16_b1224(baseline)_softcon_absU3_supUmse_Uw2_rcr
 # name: 0007_Deraindrop_SEGinlevel4tail_MSE_p256_d16_b1224(ssim_map)_exp4
-# name: 0020_Deraindrop_SEGinlevel1tail_MSE_p256_d16_b1224(diff)_softcon_absU3_rcr
+# name: 0020_Deraindrop_SEGinlevel4tail_MSE_p256_d16_b1224(diff)_softcon_absU3_rcr
 # name: 0009_Deraindrop_UNC_p256_d16_b1224_stage1
-# model_type: DeraindropSegModel
-model_type: ImageCleanModel
+model_type: ImageSoftConModel
+# model_type: ImageCleanModel
 scale: 1
 num_gpu: 1
 manual_seed: 1
@@ -13,7 +13,7 @@ manual_seed: 1
 datasets:
   train:
     name: TrainSet
-    type: Dataset_PairedImage
+    type: Dataset_PairedImage # 可设置为Dataset_PairedImage2，同步更新load_mask部分
     dataroot_gt: ./Datasets/train/Raindrop/target
     dataroot_lq: ./Datasets/train/Raindrop/input
     geometric_augs: true
@@ -50,9 +50,9 @@ datasets:
 
 # network structures
 network_g:
-  type: DRSformer2
+  type: DRSformer2_softcon
   inp_channels: 3
-  out_channels: 6
+  out_channels: 9 # softcon 6 or 4
   dim: 16
   num_blocks: [1,2,2,4] # original: 4 6 6 8
   heads: [1,2,2,4]
@@ -98,9 +98,9 @@ train:
     loss_weight: 1
     reduction: mean
   
-  # seg_opt:
-  #   type: MSELoss
-  #   loss_weight: 1
+  U_opt:
+    type: MSELoss
+    loss_weight: 1
 
 # validation settings
 val:

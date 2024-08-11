@@ -254,11 +254,13 @@ def main():
 
             lq = train_data['lq']
             gt = train_data['gt']
+            gt_mask = train_data['gt_mask']
 
             if mini_batch_size < batch_size:
                 indices = random.sample(range(0, batch_size), k=mini_batch_size)
                 lq = lq[indices]
                 gt = gt[indices]
+                gt_mask = gt_mask[indices]
 
             if mini_gt_size < gt_size:
                 x0 = int((gt_size - mini_gt_size) * random.random())
@@ -267,10 +269,12 @@ def main():
                 y1 = y0 + mini_gt_size
                 lq = lq[:,:,x0:x1,y0:y1]
                 gt = gt[:,:,x0*scale:x1*scale,y0*scale:y1*scale]
+                gt_mask = gt_mask[:,:,x0*scale:x1*scale,y0*scale:y1*scale]
             ###-------------------------------------------
 
             
-            model.feed_train_data({'lq': lq, 'gt':gt})
+            model.feed_train_data({'lq': lq, 'gt': gt, 'gt_mask': gt_mask})
+            # model.feed_train_data({'lq': lq, 'gt': gt})
             model.optimize_parameters(current_iter)  # 训练的过程，主要在这里，包括输出，loss和log等等
 
             iter_time = time.time() - iter_time
@@ -284,8 +288,9 @@ def main():
 
             # save models and training states
             if current_iter % opt['logger']['save_checkpoint_freq'] == 0:
-                logger.info('Saving models and training states.')
-                model.save(epoch, current_iter)
+                if current_iter > (0.5 * total_iters):
+                    logger.info('Saving models and training states.')
+                    model.save(epoch, current_iter)
 
             # validation
             if opt.get('val') is not None and (current_iter %
@@ -294,7 +299,7 @@ def main():
                 # wheather use uint8 image to compute metrics
                 use_image = opt['val'].get('use_image', True)
                 model.validation(val_loader, current_iter, tb_logger,
-                                 opt['val']['save_img'], rgb2bgr, use_image)
+                                 opt['val']['save_img'], rgb2bgr, use_image) # 验证的过程，主要在这里
 
             data_time = time.time()
             iter_time = time.time()
@@ -308,7 +313,10 @@ def main():
         datetime.timedelta(seconds=int(time.time() - start_time)))
     logger.info(f'End of training. Time consumed: {consumed_time}')
     logger.info('Save the latest model.')
-    model.save(epoch=-1, current_iter=-1)  # -1 stands for the latest
+
+    if current_iter > (0.5 * total_iters): # skip the 150000 iterations
+        model.save(epoch=-1, current_iter=-1)  # -1 stands for the latest
+
     if opt.get('val') is not None:
         model.validation(val_loader, current_iter, tb_logger,
                          opt['val']['save_img'])
